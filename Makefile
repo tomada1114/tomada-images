@@ -1,4 +1,4 @@
-.PHONY: resize-images compress-images optimize-images smart-compress smart-compress-all
+.PHONY: resize-images compress-images optimize-images smart-compress smart-compress-all gen-urls
 
 CHECKSUM_FILE := .checksums
 
@@ -108,3 +108,29 @@ smart-compress-all:
 	done
 	@echo ""
 	@echo "All directories processed!"
+
+# ============================================================
+# gen-urls: 指定pathの全画像URLをMarkdown形式で生成してクリップボードにコピー
+# 使い方: make gen-urls path=articles/your_directory
+# 例: make gen-urls path=articles/nextjs-websocket
+# 出力形式: ![](https://tomada1114.github.io/tomada-images/articles/xxx/image.png)
+# ============================================================
+gen-urls:
+ifndef path
+	$(error path is required. Usage: make gen-urls path=articles/your_directory)
+endif
+	@echo "Generating Markdown image URLs for $(path)..."
+	@BASE_URL="https://tomada1114.github.io/tomada-images"; \
+	URL_LIST=""; \
+	for file in $$(find $(path) -maxdepth 1 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" -o -name "*.gif" \) 2>/dev/null | sort); do \
+		URL="![]($$BASE_URL/$$file)"; \
+		URL_LIST="$$URL_LIST$$URL\n"; \
+	done; \
+	if [ -z "$$URL_LIST" ]; then \
+		echo "No images found in $(path)"; \
+		exit 1; \
+	fi; \
+	printf "$$URL_LIST" | pbcopy; \
+	echo ""; \
+	echo "$(path) のMarkdown画像URLを生成しました:"; \
+	printf "$$URL_LIST"
