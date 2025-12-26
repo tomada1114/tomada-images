@@ -1,4 +1,4 @@
-.PHONY: resize-images compress-images optimize-images smart-compress smart-compress-all gen-urls
+.PHONY: resize-images compress-images optimize-images smart-compress gen-urls
 
 CHECKSUM_FILE := .checksums
 
@@ -51,63 +51,48 @@ optimize-images: resize-images compress-images
 	@echo "All optimizations complete!"
 
 # ============================================================
-# smart-compress: 未圧縮ファイルのみをリサイズ＆圧縮
-# 使い方: make smart-compress path=articles/your_directory
+# smart-compress: articles/配下の全ディレクトリ（再帰的）を一括処理
+# 使い方: make smart-compress
+# 画像ファイルが存在するディレクトリのみを自動検知して処理
 # チェックサムで圧縮済みかを判定し、新規/変更ファイルのみ処理
 # ============================================================
 smart-compress:
-ifndef path
-	$(error path is required. Usage: make smart-compress path=articles/your_directory)
-endif
-	@echo "Smart compressing images in $(path)..."
-	@touch $(path)/$(CHECKSUM_FILE)
-	@processed=0; \
-	for file in $$(find $(path) -maxdepth 1 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) 2>/dev/null); do \
-		filename=$$(basename "$$file"); \
-		current_hash=$$(md5 -q "$$file" 2>/dev/null); \
-		stored_hash=$$(grep "  $$filename$$" $(path)/$(CHECKSUM_FILE) 2>/dev/null | awk '{print $$1}'); \
-		if [ "$$current_hash" != "$$stored_hash" ]; then \
-			echo "Processing: $$filename"; \
-			width=$$(magick identify -format "%w" "$$file" 2>/dev/null); \
-			if [ -n "$$width" ] && [ "$$width" -gt 1920 ]; then \
-				magick "$$file" -resize '1920x>' "$$file"; \
-				echo "  Resized: $$filename"; \
-			fi; \
-			ext=$$(echo "$$filename" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]'); \
-			if [ "$$ext" = "png" ]; then \
-				pngquant --quality=65-80 --ext .png --force "$$file"; \
-				echo "  Compressed: $$filename"; \
-			elif [ "$$ext" = "jpg" ] || [ "$$ext" = "jpeg" ]; then \
-				jpegoptim --max=70 "$$file" >/dev/null 2>&1; \
-				echo "  Compressed: $$filename"; \
-			fi; \
-			new_hash=$$(md5 -q "$$file" 2>/dev/null); \
-			grep -v "  $$filename$$" $(path)/$(CHECKSUM_FILE) > $(path)/$(CHECKSUM_FILE).tmp 2>/dev/null || true; \
-			echo "$$new_hash  $$filename" >> $(path)/$(CHECKSUM_FILE).tmp; \
-			mv $(path)/$(CHECKSUM_FILE).tmp $(path)/$(CHECKSUM_FILE); \
-			processed=$$((processed + 1)); \
+	@total=0; \
+	for dir in $$(find articles -type d 2>/dev/null | sort); do \
+		img_count=$$(find "$$dir" -maxdepth 1 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) 2>/dev/null | wc -l | xargs); \
+		if [ "$$img_count" -gt 0 ]; then \
+			touch "$$dir/$(CHECKSUM_FILE)"; \
+			for file in $$(find "$$dir" -maxdepth 1 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) 2>/dev/null); do \
+				filename=$$(basename "$$file"); \
+				current_hash=$$(md5 -q "$$file" 2>/dev/null); \
+				stored_hash=$$(grep "  $$filename$$" "$$dir/$(CHECKSUM_FILE)" 2>/dev/null | awk '{print $$1}'); \
+				if [ "$$current_hash" != "$$stored_hash" ]; then \
+					width=$$(magick identify -format "%w" "$$file" 2>/dev/null); \
+					if [ -n "$$width" ] && [ "$$width" -gt 1920 ]; then \
+						magick "$$file" -resize '1920x>' "$$file"; \
+						echo "Resized: $$file"; \
+					fi; \
+					ext=$$(echo "$$filename" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]'); \
+					if [ "$$ext" = "png" ]; then \
+						pngquant --quality=65-80 --ext .png --force "$$file"; \
+					elif [ "$$ext" = "jpg" ] || [ "$$ext" = "jpeg" ]; then \
+						jpegoptim --max=70 "$$file" >/dev/null 2>&1; \
+					fi; \
+					echo "Compressed: $$file"; \
+					new_hash=$$(md5 -q "$$file" 2>/dev/null); \
+					grep -v "  $$filename$$" "$$dir/$(CHECKSUM_FILE)" > "$$dir/$(CHECKSUM_FILE).tmp" 2>/dev/null || true; \
+					echo "$$new_hash  $$filename" >> "$$dir/$(CHECKSUM_FILE).tmp"; \
+					mv "$$dir/$(CHECKSUM_FILE).tmp" "$$dir/$(CHECKSUM_FILE)"; \
+					total=$$((total + 1)); \
+				fi; \
+			done; \
 		fi; \
 	done; \
-	if [ "$$processed" -eq 0 ]; then \
-		echo "No new or modified images found."; \
+	if [ "$$total" -eq 0 ]; then \
+		echo "Nothing to compress."; \
 	else \
-		echo "Processed $$processed file(s)."; \
+		echo "Done. $$total file(s) compressed."; \
 	fi
-	@echo "Smart compress complete!"
-
-# ============================================================
-# smart-compress-all: articles/配下の全ディレクトリを一括処理
-# 使い方: make smart-compress-all
-# ============================================================
-smart-compress-all:
-	@echo "Smart compressing all directories in articles/..."
-	@for dir in $$(find articles -mindepth 1 -maxdepth 1 -type d 2>/dev/null); do \
-		echo ""; \
-		echo "=== Processing: $$dir ==="; \
-		$(MAKE) smart-compress path=$$dir; \
-	done
-	@echo ""
-	@echo "All directories processed!"
 
 # ============================================================
 # gen-urls: 指定pathの全画像URLをMarkdown形式で生成してクリップボードにコピー
